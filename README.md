@@ -1,75 +1,94 @@
 # MiniRack
 
-**MiniRack | Portable Networking & Home-Subscription Research Prototype**  
-**مشروع MiniRack — نموذج بحثي للاتصال المتنقل وإدارة الاشتراك المنزلي**
+### راوتر ذكي متنقل وتجربة بحثية لهوية اشتراك إنترنت موحّدة
 
-> عرض SAIF البحثي | ESP32-S3 + Raspberry Pi | Live hardware demonstrator + experimental network architecture
+**MiniRack — Portable Secure Networking & Unified Home-Service Entitlement Research**  
+**SAIF Exhibition | Functional Hardware Prototype + Experimental Network Research**
 
-## الفكرة / The idea
+---
 
-MiniRack مشروع بحثي لجهاز اتصال متنقل بواجهة لمس، يوزع الإنترنت على أجهزة المالك والضيوف، ويصل إلى Raspberry Pi في المنزل عبر WireGuard. يدرس المشروع أيضًا **آلية ربط هوية جهاز متنقل باستحقاق اشتراك منزلي واحد عبر بوابات وصول متعددة**، مع التحقق من الهوية وتسجيل الجلسات.
+## ما هو MiniRack؟
 
-The longer-term research question is whether a single home-service entitlement can be recognized across terrestrial and satellite access networks. **A single entitlement does not itself provide free radio access, international transport, carrier authorization or unified commercial billing.** Those require infrastructure and/or agreements.
+**MiniRack** مشروع لتطوير جهاز اتصال محمول ذكي، بواجهة لمس وإدارة مستقلة للأجهزة، يتكامل مع خادم **Raspberry Pi** داخل المنزل. يجمع بين شبكة Wi‑Fi محلية، والاتصال الآمن، وإدارة صلاحيات **أجهزتي / ضيف / رفض**، ونظام بحثي يتعرف على **هوية اشتراك منزلي واحد** عبر بوابات وصول مختلفة.
 
-### شكل النظام / Architecture
+**فكرة الابتكار البحثية:** لماذا يبقى استحقاق اشتراك الإنترنت مرتبطًا بموقع المنزل، بينما المستخدم يتحرك؟ نبحث في تصميم آلية موحّدة لمصادقة جهاز متنقل واستحقاق خدمته عبر شبكات وصول أرضية وفضائية متعددة، مع الحفاظ على هوية الاشتراك وتسجيل الجلسات.
+
+> الهدف البحثي هو **قابلية تنقل استحقاق الاشتراك**؛ وليس الادعاء بأن وجود الاشتراك وحده يمنح وصولًا مجانيًا إلى أبراج أو أقمار أو شبكات مشغلين آخرين. توفير النقل الفعلي موضوع هندسي وتشغيلي منفصل.
+
+## المشكلة التي يعالجها المشروع
+
+في الحلول التقليدية، يحتاج المسافر غالبًا إلى إعدادات اتصال متعددة، وربما اشتراك بيانات آخر، رغم أنه يدفع بالفعل مقابل خدمة الإنترنت المنزلية. كما يصعب عليه إدارة أجهزته وضيوفه والوصول إلى بيئته المنزلية بأمان من جهاز متنقل واحد.
+
+يقدّم **MiniRack** نموذجًا لتوحيد إدارة الجهاز والهوية والصلاحيات، ويدرس إمكانية فصل **هوية الاشتراك** عن **شبكة الوصول** المستخدمة أثناء التنقل.
+
+## منظومة MiniRack
 
 ```mermaid
 flowchart LR
-    A[Owner and guest devices] --> B[MiniRack ESP32-S3 Wi-Fi AP]
-    B --> C[Available uplink]
-    B -. WireGuard test tunnel .-> D[Raspberry Pi at home]
-    D --> E[Gateway relay: WG-scoped]
-    E --> F[Subscription core: HTTP + HMAC + SQLite]
-    F --> G[Home account and session ledger]
+    U[أجهزة المالك والضيوف] --> M[MiniRack ESP32-S3]
+    M --> W[مصدر اتصال متاح]
+    M -. WireGuard .-> P[Raspberry Pi في المنزل]
+    P --> G[بوابة مصادقة عبر WireGuard]
+    G --> C[نواة الاشتراك الموحد]
+    C --> A[هوية الاشتراك وسجل الجلسات]
 ```
 
-> **مهم:** مخطط المصادقة يعمل على عتادنا الحقيقي، لكن المسار المتقطع لا يعني أننا أثبتنا أن كل بيانات عملاء Wi-Fi تخرج للإنترنت عبر المنزل.
+**النموذج العتادي الموجود:** لوحة ESP32‑S3 بشاشة لمس 2.8 بوصة ونقطة وصول `MiniRack-Secure`، وخادم Raspberry Pi منزلي.  
+**المنظومة البرمجية البحثية:** خدمة مصادقة HTTP موقّعة باستخدام HMAC، وقاعدة SQLite للجلسات والاستحقاقات، وبوابة لا تستمع إلا على واجهة WireGuard المخصصة.
 
-## ما تم إثباته / Verified results (2 Nov 2026)
+## ما الذي يمكن عرضه عمليًا أمام الحكام؟
 
-| الجزء | النتيجة | نوع الدليل |
-|---|---|---|
-| ESP32-S3 touchscreen | الشاشة والواجهة واللمس ورفع Firmware تعمل | اختبار جهاز حقيقي |
-| MiniRack-Secure AP | اتصال آيفون وتصفح إنترنت مع إيقاف البيانات الخلوية في اختبارات V1 | اختبار جهاز حقيقي سابق |
-| MAIN / GUEST / temporary Reject | شاشة تسجيل جهاز جديد وأزرار أجهزتي/ضيف/رفض؛ رفض جلسة مؤقت لا حظر دائم | اختبار جهاز حقيقي |
-| ESP32 ↔ Raspberry Pi | نفق WireGuard تم إثباته سابقًا | اختبار اتصال فعلي |
-| اشتراك HOME-001 | ESP32 سجل جلسة مصادقة فعلية لدى خدمة Pi؛ وبعد إعادة تشغيل الطرفين وصل عدد الجلسات المسجلة إلى 3 | اختبار جهاز + خدمة حقيقية |
-| بدء خدمات Pi | `minirack-core` و`minirack-relay` رجعتا `active` بعد إعادة التشغيل | systemd على جهاز حقيقي |
-| Lab gateways SA / JP / satellite | برنامج تجريبي أنشأ 3 جلسات لحساب واحد ونجح في رفض الحساب الموقوف | HTTP/SQLite/HMAC في مختبر برمجي |
-| قياس استهلاك V2 | الجلسات المسجلة للجهاز الحقيقي ظهرت بقيم `up=0/down=0` | التحقق من المصادقة فقط؛ لا إثبات لتتبع بيانات الإنترنت الحقيقي |
-| طباعة الهيكل | فحص هندسي لـ 8 ملفات STL | ليست تجربة طباعة أو ملاءمة نهائية |
-
-### ما لم نثبته / Not yet demonstrated
-
-- تشغيل أبراج 4G/5G أو رابط فضائي حقيقي ضمن MiniRack، أو الانتقال الدولي على اشتراك المنزل في شبكة تشغيلية.
-- الفوترة الحقيقية، ولا تحويل حركة الإنترنت الدولية على رصيد الفايبر دون اتفاق ناقل.
-- أن إنترنت كل عميل يخرج حصريًا عبر الـ Raspberry Pi في المنزل (full-tunnel/fail-closed)، أو عزل أمني مكتمل ومُعتمد لكل الأجهزة.
-- معاينة التقطيع والطباعة والتجميع النهائي للهيكل، أو محاكاة Packet Tracer LIVE (مخطط لها كآخر مرحلة).
-
-## ملفات المشروع / Repository contents
-
-| المجلد | المحتوى |
+| التجربة | الدليل الذي تحقق |
 |---|---|
-| `src/`, `include/` | Firmware ESP32-S3 وشاشة اللمس وإدارة الأجهزة والاتصال |
-| `pi/` | خادم المصادقة ووسيط البوابة واختبارات الرازبيري |
-| `test/` | اختبارات السياسات والتكامل البرمجي |
-| `PRINT_3D/` | ملفات STL وملاحظات فحصها قبل الطباعة |
-| `docs/` | شرح المعرض، القياسات، وضوابط الأمان |
+| تشغيل جهاز MiniRack بشاشة اللمس | تشغيل Firmware وواجهة التحكم على الجهاز الحقيقي |
+| اتصال الجوال بشبكة MiniRack | تصفح الإنترنت مع إيقاف بيانات الهاتف في اختبارات فعلية سابقة |
+| إدارة الأجهزة | شاشة إضافة جهاز جديد بخيارات **أجهزتي / ضيف / رفض مؤقت** |
+| الاتصال المنزلي الآمن | اتصال WireGuard بين ESP32‑S3 وRaspberry Pi تحقق سابقًا |
+| التعرف على اشتراك المنزل | جهاز ESP32 الفعلي صادق على هويته لدى خدمة Raspberry Pi، وسُجلت جلسة جديدة تلقائيًا بعد إعادة تشغيله |
+| التعافي بعد إعادة التشغيل | خدمتا `minirack-core` و`minirack-relay` عادتا بحالة `active` بعد إعادة تشغيل Raspberry Pi |
+| استحقاق واحد عبر بوابات متعددة | اختبار برمجي باستخدام بوابات مختبرية مسماة السعودية/اليابان/فضائية لحساب واحد، مع رفض المصادقة عند تعليق الحساب |
 
-## التشغيل / Build and setup
+**نتيجة موثّقة بتاريخ 2 نوفمبر 2026:** وصل سجل الحساب التجريبي `HOME-001` إلى **3 جلسات مصادقة** عقب اختبارات تشغيل وإعادة تشغيل ESP32 والرازبيري. عدد الجلسات المسجلة لا يعني عدد اتصالات متزامنة. في هذا الاختبار لم تُحسب بعد بايتات الإنترنت الفعلية (`up=0 / down=0`).
 
-1. افتح المجلد في **VS Code + PlatformIO**؛ اللوحة `esp32-s3-devkitc-1`.
-2. **لا تنسخ أسرار أو إعدادات أي شخص.** انسخ ملفات `.example.h` في `include/` و`src/` إلى الأسماء بدون `.example`، ثم ضع مفاتيحك وكلمات المرور الخاصة محليًا. هذه النسخة لا تحتوي على مفاتيح MiniRack الفعلية.
-3. عدّل `platformio.ini` إذا كان لديك مسار مكتبات خاص؛ النسخة العامة أزلت منها مسار Windows الشخصي.
-4. نفذ `RUN_MINIRACK_TESTS_WINDOWS.cmd`، أو `bash RUN_MINIRACK_TESTS_LINUX.sh`، ثم اختبر Build/Upload على عتادك.
-5. راجع [إعدادات الأمان](docs/SECURITY_AND_PUBLICATION_AR.md) و[طريقة إعداد العرض](docs/SAIF_EXHIBITION_AR.md).
+للمزيد من الأدلة والتفاصيل: [نتائج الاختبار](docs/RESULTS_2026-11-02_AR.md) · [سيناريو تقديم المعرض](docs/SAIF_EXHIBITION_AR.md)
 
-**تنبيه:** لن يعمل اتصال WireGuard من نسخة GitHub كما هي؛ تحتاج مفاتيحك وخادمك الخاص. ولا تُشغّل `pi/*gateway*` أو أي تعديلات جدار ناري دون مراجعة أثرها.
+## أين تكمن القيمة البحثية؟
 
-## English summary
+الابتكار المقترح لا يقوم على اختراع Wi‑Fi أو WireGuard أو HMAC من جديد، بل على دراسة **منظومة انتقال واستيثاق استحقاق اشتراك موحّد** عبر وسائل وصول متعددة. تقارن الدراسة بين التصميم المقترح والطرق المرجعية باستخدام مقاييس مثل زمن المصادقة، والاستعادة بعد الانقطاع، واستمرارية الجلسات، وسلامة احتساب الاستهلاك.
 
-MiniRack is a research-oriented ESP32-S3 touchscreen Wi-Fi access point with a home Raspberry Pi, WireGuard connectivity, owner/guest management and a separate experimental HMAC/SQLite entitlement service. Real ESP32-to-Pi authorization and service persistence were observed; SA/JP/satellite labels are *laboratory gateway identities*, not field networks. International roaming, operator billing, satellite data, security certification and end-to-end home-only internet egress are **not claimed**.
+تُعرض مكونات الشبكة الأرضية والفضائية الدولية **كنموذج بحثي ومحاكاة مخطط لها**؛ أما التجارب المباشرة الحالية فتعتمد على ESP32 وRaspberry Pi الموجودين بالفعل. يتم التمييز بين التجربة العتادية والاختبار البرمجي والمحاكاة، للحفاظ على دقة النتائج أمام لجنة التحكيم.
 
-**Project status:** Functional experimental prototype; not a commercial cellular/satellite product or certified security gateway.
+## تجربة العرض الحي | Live Demonstration
 
-**Publication note:** No open-source license is granted here. Consult the project owner before reuse. Publishing source before patent review may affect novelty/filing options in some jurisdictions.
+1. تشغيل MiniRack أمام الجمهور وإظهار واجهة الجهاز والتعامل مع الأجهزة الجديدة.
+2. عرض وصول الجهاز الحقيقي إلى Raspberry Pi ونظام مصادقة الاشتراك.
+3. مشاهدة حالة خدمات الرازبيري والجلسات المسجلة وإعادة المصادقة بعد إعادة التشغيل.
+4. تقديم نتائج اختبار البوابات المختبرية للحساب الواحد.
+5. إضافة محاكاة الشبكة الدولية في **Cisco Packet Tracer** كجزء أخير من العرض عند اكتمال تنفيذها واختبارها.
+
+> لا يقدّم هذا المستودع اتصال 4G/5G دوليًا أو اتصالًا فضائيًا فعليًا، ولا يثبت بعد خروج كامل حركة الإنترنت عبر المنزل أو فرض الاستحقاق على NAT. هذه الحدود التقنية موثقة في [نتائج الاختبارات](docs/RESULTS_2026-11-02_AR.md) وتبقى ضمن برنامج التحقق البحثي.
+
+## محتويات المستودع
+
+| المسار | الوظيفة |
+|---|---|
+| `src/`, `include/` | Firmware لشاشة ESP32‑S3، والشبكة وإدارة المستخدمين |
+| `pi/` | خدمات Raspberry Pi: المصادقة، سجل الاشتراك وبوابة WireGuard |
+| `test/` | اختبارات برمجية وسياسات الشبكة |
+| `PRINT_3D/` | ملفات الهيكل ثلاثي الأبعاد ونتائج الفحص الهندسي |
+| `docs/` | شرح SAIF والنتائج والقيود الفنية والأمنية |
+
+## بناء وتشغيل النسخة البحثية
+
+تُستخدم **VS Code + PlatformIO** للوحة `esp32-s3-devkitc-1`. تبدأ الإعدادات المحلية من الملفات النموذجية `*.example.h`؛ يجب إدخال بيانات الاتصال ومفاتيح كل جهاز **محليًا فقط**. لا يحتوي هذا المستودع على مفاتيح WireGuard الحقيقية أو كلمات مرور الشبكة أو بيانات تعريف الجهاز الخاصة.
+
+راجع ملفات `docs/` قبل إعادة تنفيذ الاختبارات أو تشغيل خدمات الشبكة. بعض الوظائف تتطلب جهاز ESP32 فعليًا وRaspberry Pi مُجهّزًا بصورة مستقلة.
+
+## English abstract
+
+**MiniRack** is a functional ESP32‑S3 touchscreen portable networking prototype connected to a home Raspberry Pi. The project studies the portability of a **single home-service entitlement** across heterogeneous access gateways. Hardware experiments demonstrate device onboarding, Wi‑Fi access and ESP32-to-Pi subscription authentication; software laboratory tests demonstrate signed authorization and accounting identities across three simulated gateway labels. Actual international cellular/satellite transport and carrier billing are outside the demonstrated prototype.
+
+---
+
+**MiniRack | SAIF Research Exhibition**  
+*Project source and research prototype. No open-source license is granted by default. Consider intellectual-property review before making the repository public.*
