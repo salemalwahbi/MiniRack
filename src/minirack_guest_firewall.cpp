@@ -1,4 +1,5 @@
 #include "minirack_guest_firewall.h"
+#include "minirack_egress_policy.h"
 #include <esp_netif.h>
 #include <esp_netif_net_stack.h>
 #include <freertos/FreeRTOS.h>
@@ -62,7 +63,8 @@ static err_t filterInput(struct pbuf *p, struct netif *n) {
   }
   if((role!=MiniRackGuestPolicy::Role::OWNER &&
       !broadcast && (n->hwaddr_len!=6 || memcmp(frame,n->hwaddr,6)!=0)) ||
-     !MiniRackGuestPolicy::allowFrame(frame,copied,role)) {
+     !MiniRackGuestPolicy::allowFrameForEgress(
+         frame,copied,role,MiniRackEgressPolicy::kRequireHomeEgress)) {
     ++drops;
     return ERR_VAL;
   }

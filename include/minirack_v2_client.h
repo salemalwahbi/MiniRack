@@ -1,4 +1,7 @@
 #pragma once
-// Experimental Mini Rack V2: authentication telemetry only.
-// Does not activate/deactivate NAT or enforce home egress.
-namespace MiniRackV2 { void tick(bool wgReady); }
+// V2: signed entitlement permits AP NAT only while authorization is fresh.
+// Disabled/unprovisioned builds retain the frozen V1 NAT behavior.
+namespace MiniRackV2 {
+  void tick(bool wgReady);
+  bool internetPermit();
+}

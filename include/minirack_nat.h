@@ -15,5 +15,8 @@ public:
             bool routeHome = false);
 private:
   bool overlapsApSubnet(const IPAddress &apIp) const;
+  IPAddress boundIP=IPAddress(0,0,0,0);
+  IPAddress boundGateway=IPAddress(0,0,0,0);
+  bool boundHomeMode=false;
 };
 }

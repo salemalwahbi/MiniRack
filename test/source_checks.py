@@ -15,7 +15,7 @@ checks={
  'no owner key revocation on unassign': 'db_->remove("ownerid")' not in p.split('bool Registry::clearPrimary()')[1].split('int Registry::addPending')[0],
  'all braces balanced':m.count('{')==m.count('}'),
  'bounded WiFi reconnect': 'MiniRackReconnect::due(' in m and 'WiFi.reconnect();' in m,
- 'public endpoint optional': '#ifdef WG_SERVER_HOST' in m and 'MDNS.queryHost(MINIRACK_PI_MDNS_HOST' in m,
+ 'public endpoint optional': '#ifdef WG_SERVER_HOST' in m and 'MDNS.queryHost("salem-pi"' in m,
  'one-time rebind same owner slot': 'rebindAuthorizedDevice(slot,newMac)' in m and 'oldMac=peerMacs[slot]' in m,
  'extra device QR': 'openOwnerSetup(true)' in m and 'relinkExtraDevice' in m,
  'strict NAT gate': 'MiniRackEgressPolicy::allowDirectNat(' in m,

@@ -88,4 +88,23 @@ inline bool allowFrame(const uint8_t *f, size_t n, Role role) {
   if(!publicIPv4(dst)) return false;
   return proto==6 || proto==17 || proto==1; // TCP, UDP, ICMP
 }
+
+// Shared NAPT cannot put MAIN and GUEST on different uplinks. In the opt-in
+// home-tunnel experiment, do not allow a GUEST to reach the Internet through
+// the HOME tunnel. Permit only DHCP bootstrap so the Wi-Fi client can receive
+// a lease. Normal/direct-WAN mode retains its existing guest IPv4 policy.
+// This is deliberate temporary containment, NOT simultaneous split routing.
+inline bool allowFrameForEgress(const uint8_t *f, size_t n, Role role,
+                                bool homeEgress) {
+  if (!allowFrame(f, n, role)) return false;
+  if (!homeEgress || role != Role::GUEST) return true;
+  if (!f || n < 42 || f[12] != 0x08 || f[13] != 0x00 || f[23] != 17)
+    return false;
+  const uint8_t ihl = (f[14] & 0x0f) * 4;
+  if (ihl < 20 || n < size_t(14 + ihl + 4)) return false;
+  const size_t u = 14 + ihl;
+  const uint16_t sourcePort = (uint16_t(f[u]) << 8) | f[u + 1];
+  const uint16_t destPort = (uint16_t(f[u + 2]) << 8) | f[u + 3];
+  return sourcePort == 68 && destPort == 67;
+}
 }

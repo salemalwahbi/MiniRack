@@ -14,10 +14,6 @@
 #include <esp_arduino_version.h>
 #include <WireGuard-ESP32.h>
 #include "wg_secrets.h"
-#include "minirack_ap_defaults.h" // local-only password; never commit
-#ifndef MINIRACK_PI_MDNS_HOST
-#define MINIRACK_PI_MDNS_HOST "raspberrypi"
-#endif
 #include "minirack-bridge-secrets.h"  // generated privately on Pi; never commit
 // The working 2.x firmware is preserved in backup_original.
 // NAPT requires the dedicated Arduino-ESP32 3.x PlatformIO environment.
@@ -56,6 +52,8 @@
 #include "minirack_security.h"
 #include "minirack_guest_firewall.h"
 #include "minirack_v2_client.h"
+#include "minirack_transport_v2.h"
+#include "ui_minirack_expo_ar.h"
 
 
 // ======================================================
@@ -224,7 +222,6 @@ static void cancelPendingPair(){
 
 static uint32_t portalChangeMs=0,lastStaRetry=0,lastViewRefresh=0;
 static uint8_t staReconnectAttempts=0; // capped reconnection retry backoff
-static uint32_t portalPin=0;
 static bool wifiChangePending=false,apChangePending=false;
 static String nextAPPassword;
 static uint8_t selectedPeer=0;
@@ -306,7 +303,7 @@ static const char *CAPTIVE_PAGE_URL="http://192.168.4.1/onboard";
 
 
 enum class View:uint8_t {HOME, USERS, MY_DEVICES, GUESTS, PAIR_CHOICE, PEER_DETAILS, CONFIRM_REMOVE, CONFIRM_UNSET_PRIMARY, CONFIRM_SET_PRIMARY, INTERNET, WIFI_LIST, WIFI_SETUP, OWNER_VPN_QR,
-                         SECURE,SETTINGS,DEVICE_INFO,CONFIRM_RESTART,POWER,CONFIRM_AP_OFF,STATUS};
+                         SECURE,SETTINGS,DEVICE_INFO,CONFIRM_RESTART,POWER,CONFIRM_AP_OFF,STATUS,TRANSPORTS};
 static View view=View::HOME;
 static View returnView=View::HOME;
 static View userReturnView=View::USERS; // back from device details / confirm removal
@@ -1556,8 +1553,6 @@ static void drawWifiSetup(){
    eng(18,225,"CHECK PHONE SETUP WINDOW",WHITE,1);
    eng(18,236,"IF ABSENT, SCAN QR",MUTED,1);
  }else eng(23,229,"MiniRack-Secure Wi-Fi first",MUTED,1);
- char pin[12];snprintf(pin,sizeof(pin),"%06lu",(unsigned long)portalPin);
- eng(20,251,"PIN:",MUTED,1);eng(58,245,pin,ACCENT,2);
  // Shows whether the phone's browser request actually reached this ESP32.
  char req[28];snprintf(req,sizeof(req),"HTTP received: %lu",(unsigned long)portalHttpRequests);
  eng(20,273,req,MUTED,1);
@@ -1767,17 +1762,29 @@ String endpointHost;
   endpointHost = String(WG_SERVER_HOST);
   endpointHost.trim();
 #endif
+#ifdef MINIRACK_HOME_TUNNEL_EXPERIMENT
+  if (WiFi.SSID() == "MiniRack-Pi-Link") {
+    IPAddress piGateway = WiFi.gatewayIP();
+    if (piGateway != IPAddress(0,0,0,0))
+      endpointHost = piGateway.toString();
+  }
+#endif
 if(endpointHost.isEmpty()) {
   // Legacy home-LAN discovery only. mDNS does not work from hotels abroad.
   if(mdnsReady) {
-    IPAddress piIP = MDNS.queryHost(MINIRACK_PI_MDNS_HOST, 2000);
+    IPAddress piIP = MDNS.queryHost("salem-pi", 2000);
     if(piIP != IPAddress(0, 0, 0, 0)) endpointHost = piIP.toString();
   }
 }
 if(!endpointHost.isEmpty()) {
     Serial.printf("MINIRACK WG ENDPOINT: %s\n", endpointHost.c_str());
-    const bool ok = vpnTunnel.begin(vpnIP, WG_PRIVATE_KEY,
-        endpointHost.c_str(), WG_SERVER_PUBLIC_KEY, WG_SERVER_PORT);
+    // Pi (10.10.0.1) must remain reachable via wg0 even when AP NAT
+    // selects Wi-Fi STA as the default route. The legacy overload used
+    // a /32 netmask, leaving 10.10.0.1 outside the WG on-link network.
+    const bool ok = vpnTunnel.begin(vpnIP,
+        IPAddress(255, 255, 255, 0), IPAddress(0, 0, 0, 0),
+        WG_PRIVATE_KEY, endpointHost.c_str(),
+        WG_SERVER_PUBLIC_KEY, WG_SERVER_PORT);
     Serial.printf("MINIRACK WG INIT: %s\n",ok ? "OK" : "FAILED");
 } else {
     Serial.println("MINIRACK WG: NO ENDPOINT; local mDNS unavailable");
@@ -1850,7 +1857,64 @@ static void drawDevice(){
  eng(20,153,"Crypto telemetry: REAL",ACCENT);
  eng(20,175,MiniRackCrypto::hasAcknowledgement()?"Pi UART: ACK received":"Pi UART: no ACK yet",MUTED);
  // This page contains diagnostics only: no shutdown link.
+ surface(10,199,220,60,PANEL,9,BORDER);
+ eng(20,213,"4G/5G + SATELLITE",WHITE,1);
+ eng(20,235,"TRANSPORT PROFILES",MUTED,1);
  backButton();
+}
+static void drawTransportProfiles(){
+  header();
+  if(arabicLanguage)
+    bitmapText(120,46,MR_EXPO_TITLE,MR_EXPO_TITLE_W,MR_EXPO_TITLE_H,WHITE);
+  else eng(40,57,"LINK PRIORITY",WHITE,2);
+
+  const auto &cfg = MiniRackTransport::settings();
+
+  // 4G/5G: a green switch means the saved PROFILE is enabled, not connected.
+  surface(10,82,220,57,PANEL_2,11,BORDER);
+  if(arabicLanguage)
+    bitmapText(90,90,MR_EXPO_CELL,MR_EXPO_CELL_W,MR_EXPO_CELL_H,WHITE);
+  else eng(18,94,"4G/5G FALLBACK",WHITE,1);
+  eng(18,116,MiniRackTransport::ratName(cfg.rat),MUTED,1);
+  if(arabicLanguage) {
+    if(cfg.policy.cellularProfile)
+      bitmapText(110,112,MR_EXPO_CELL_OFFLINE,MR_EXPO_CELL_OFFLINE_W,MR_EXPO_CELL_OFFLINE_H,MUTED);
+    else
+      bitmapText(110,112,MR_EXPO_CELL_DISABLED,MR_EXPO_CELL_DISABLED_W,MR_EXPO_CELL_DISABLED_H,MUTED);
+  } else eng(78,116,cfg.policy.cellularProfile?"NO MODEM":"PROFILE OFF",MUTED,1);
+  eng(18,130,cfg.apn.isEmpty()?"APN: NOT SET":"APN: SET",MUTED,1);
+  mr8Switch(176,100,cfg.policy.cellularProfile);
+
+  // Satellite: no terminal hardware, regardless of configuration switch.
+  surface(10,146,220,53,PANEL_2,11,BORDER);
+  if(arabicLanguage)
+    bitmapText(92,151,MR_EXPO_SAT,MR_EXPO_SAT_W,MR_EXPO_SAT_H,WHITE);
+  else eng(18,158,"SATELLITE BACKUP",WHITE,1);
+  if(arabicLanguage) {
+    if(cfg.policy.satelliteProfile)
+      bitmapText(88,177,MR_EXPO_SAT_OFFLINE,MR_EXPO_SAT_OFFLINE_W,MR_EXPO_SAT_OFFLINE_H,MUTED);
+    else
+      bitmapText(88,177,MR_EXPO_SAT_DISABLED,MR_EXPO_SAT_DISABLED_W,MR_EXPO_SAT_DISABLED_H,MUTED);
+  } else eng(18,180,cfg.policy.satelliteProfile?"NO TERMINAL":"PROFILE OFF",MUTED,1);
+  mr8Switch(176,163,cfg.policy.satelliteProfile);
+
+  // Auto-failover is a policy request only; no radio driver or route switch.
+  surface(10,206,220,53,PANEL_2,11,BORDER);
+  if(arabicLanguage)
+    bitmapText(93,210,MR_EXPO_AUTO,MR_EXPO_AUTO_W,MR_EXPO_AUTO_H,WHITE);
+  else eng(18,219,"AUTO FAILOVER POLICY",WHITE,1);
+  if(arabicLanguage) {
+    if(cfg.policy.failoverRequested)
+      bitmapText(88,237,MR_EXPO_POLICY_ONLY,MR_EXPO_POLICY_ONLY_W,MR_EXPO_POLICY_ONLY_H,MUTED);
+    else
+      bitmapText(88,237,MR_EXPO_POLICY_DISABLED,MR_EXPO_POLICY_DISABLED_W,MR_EXPO_POLICY_DISABLED_H,MUTED);
+  } else eng(18,241,cfg.policy.failoverRequested?"POLICY ONLY; NO MODEM":"POLICY DISABLED",MUTED,1);
+  mr8Switch(176,224,cfg.policy.failoverRequested);
+
+  if(arabicLanguage)
+    bitmapText(120,265,MR_EXPO_PRIORITY,MR_EXPO_PRIORITY_W,MR_EXPO_PRIORITY_H,MUTED);
+  else eng(13,268,"HOME > 4G/5G > SAT",MUTED,1);
+  backButton();
 }
 static void drawPower(){
  header();drawCloseDeviceLabel(52,ACCENT);
@@ -1895,6 +1959,7 @@ static void drawUI(){
  case View::SECURE:drawSecure();break;
  case View::SETTINGS:drawSettings();break;
  case View::DEVICE_INFO:drawDevice();break;
+ case View::TRANSPORTS:drawTransportProfiles();break;
  case View::CONFIRM_RESTART:drawDeepSleepConfirm();break;
  case View::POWER:drawPower();break;
  case View::STATUS:drawStatusDetails();break;
@@ -1935,7 +2000,6 @@ static void openPortal(bool apKeyOnly=false){
  portalForVpn=false;
  mr7CloseToken();
  portalForAPKey=apKeyOnly;
- portalPin=100000+(esp_random()%900000);
  portalOpenUntil=millis()+300000;
  go(View::WIFI_SETUP);
 }
@@ -1951,9 +2015,9 @@ static void openOwnerSetup(bool forExtraDevice=false){
   cancelPendingPair();pairOpenUntil=0;
   portalForOwnerRelink=false;portalForVpn=false;portalForAPKey=false;
   relinkExtraDevice=forExtraDevice;
-  portalOpenUntil=0;portalPin=0;mr7CloseToken();
+  portalOpenUntil=0;mr7CloseToken();
   if(!(isPrimary(selectedPeer) || (forExtraDevice && peerRegistry.isOwnerDevice(selectedPeer))))ownerQrBlock=4;
-  else if(apPassword=="MINIRACK_AP_FACTORY_PASSWORD")ownerQrBlock=1; // known shared demo password
+  else if(apPassword=="MiniRack2026!")ownerQrBlock=1; // known shared demo password
   else if(!apBroadcastEnabled)ownerQrBlock=2;
   else if(forExtraDevice || !isPeerOnline(selectedPeer)){
     portalForOwnerRelink=true;
@@ -2056,7 +2120,7 @@ static void onTap(int x,int y){
      // Physically leaving cancels the one-time approval session.
      const View target=relinkExtraDevice?View::PEER_DETAILS:View::SECURE;
      portalForVpn=false;portalForOwnerRelink=false;relinkExtraDevice=false;
-     portalOpenUntil=0;portalPin=0;mr7CloseToken();
+     portalOpenUntil=0;mr7CloseToken();
      go(target);return;
    }
    if(ownerQrBlock==1 && y>=206 && y<=267){go(View::SETTINGS);return;}
@@ -2140,7 +2204,7 @@ static void onTap(int x,int y){
    }
    return;
  }
- if(y>=283){go(view==View::DEVICE_INFO?View::SETTINGS:
+ if(y>=283){go(view==View::TRANSPORTS?View::DEVICE_INFO:view==View::DEVICE_INFO?View::SETTINGS:
     (view==View::MY_DEVICES||view==View::GUESTS)?View::USERS:View::HOME);return;}
  if(view==View::USERS){
    if(y>=120 && y<165){userScroll=0;go(View::MY_DEVICES);return;}
@@ -2199,7 +2263,19 @@ static void onTap(int x,int y){
    }
    return;
  }
- if(view==View::SETTINGS){
+  if(view==View::DEVICE_INFO){
+   if(y>=199 && y<260){go(View::TRANSPORTS);return;}
+ }
+ if(view==View::TRANSPORTS){
+   if(y>=82 && y<140){
+     if(x>=159)MiniRackTransport::toggleCellular(prefsNet);
+     else MiniRackTransport::nextRat(prefsNet);
+     uiDirty=true;return;
+   }
+   if(y>=146 && y<200){MiniRackTransport::toggleSatellite(prefsNet);uiDirty=true;return;}
+   if(y>=206 && y<260){MiniRackTransport::toggleFailover(prefsNet);uiDirty=true;return;}
+   return;
+ }if(view==View::SETTINGS){
    if(y>=110 && y<=150){chooseLanguage(x);return;}
    if(y>=154 && y<=196){go(View::DEVICE_INFO);return;}
    if(y>=198 && y<=240){chosenSSID="";openPortal(true);return;}
@@ -2310,25 +2386,19 @@ static String htmlLayout(const String &body) {
 }
 
 static bool requirePortalAuth() {
-  // A physical PIN is an approval factor, not a substitute for an OWNER role.
-  // After first-time MAIN pairing, other AP clients cannot alter uplink or
-  // Wi-Fi passwords even if they see/guess a setup PIN.
+  // MiniRack WIFI SETUP NO PIN - physical screen and OWNER only.
+  // Never permit Wi-Fi/AP changes by a GUEST after MAIN enrollment.
   if (!primaryMac.isEmpty() && !isOwnerBrowser(portal.client().remoteIP())) {
     mrSecurityObserve(MiniRackSecurity::Event::RejectedProtectedProfile,
                       mrSecurityIPTag(portal.client().remoteIP()));
     portal.send(403,"text/plain; charset=utf-8","OWNER Wi-Fi connection required");
     return false;
   }
-  if(!windowOpen(portalOpenUntil)) {
-    portal.send(403,"text/html; charset=utf-8",htmlLayout("<p>افتح إعداد الاتصال من شاشة ESP32 أولًا.</p>"));
-    return false;
-  }
-  String submitted=portal.arg("pin");
-  char pin[8];snprintf(pin,sizeof(pin),"%06lu",(unsigned long)portalPin);
-  if(submitted!=pin) {
-    mrSecurityObserve(MiniRackSecurity::Event::InvalidSetupPin,
-                      mrSecurityIPTag(portal.client().remoteIP()));
-    portal.send(403,"text/html; charset=utf-8",htmlLayout("<p>رمز الإعداد غير صحيح.</p>"));
+  // The selected network/AP key must be approved from the actual touchscreen.
+  if(view != View::WIFI_SETUP || portalForVpn || portalForOwnerRelink ||
+     !windowOpen(portalOpenUntil)) {
+    portal.send(403,"text/html; charset=utf-8",
+      htmlLayout("<p>افتح إعداد الاتصال من شاشة ESP32 أولًا.</p>"));
     return false;
   }
   return true;
@@ -2380,7 +2450,6 @@ static void sendPortalHome(){
    page+="<p>إذا كانت الشبكة محمية بكلمة مرور، أدخلها هنا. للشبكات المفتوحة اترك الحقل فارغًا.</p>";
    page+="<form method='post' action='/wifi/connect'>";
    page+="<label>كلمة مرور Wi-Fi</label><input type='password' name='password' maxlength='63' autocomplete='off'>";
-   page+="<label>رمز الإعداد الظاهر على شاشة ESP32</label><input inputmode='numeric' name='pin' maxlength='6' required>";
    page+="<button type='submit'>اتصال بالشبكة المحددة</button></form>";
    page+="<p style='opacity:.75'>هذه الصفحة لبيانات Wi-Fi فقط. شبكات الفندق التي تطلب صفحة دخول خارجية تحتاج دعمًا إضافيًا.</p>";
  }else{
@@ -2388,7 +2457,6 @@ static void sendPortalHome(){
    page+="<p>هذه العملية ستفصل الأجهزة المتصلة. ستحتاج إلى الاتصال من جديد بالكلمة الجديدة.</p>";
    page+="<form method='post' action='/ap/change'>";
    page+="<input type='password' name='pass' minlength='12' maxlength='63' placeholder='كلمة المرور الجديدة' required>";
-   page+="<input inputmode='numeric' name='pin' maxlength='6' placeholder='رمز الإعداد' required>";
    page+="<button type='submit'>تغيير كلمة مرور شبكة الجهاز</button></form>";
  }
  page+="</article>";
@@ -2533,7 +2601,21 @@ static void miniNatService() {
           !admissionOpen,!recoveringOwner,vpnEnabled,wgLinkUp)
       : MiniRackEgressPolicy::allowDirectNat(natShareEnabled,natStationPolicyOk,
           !admissionOpen,!recoveringOwner);
-  natController.poll(mayForward,apBroadcastEnabled,AP_IP,NAT_RETRY_MS,homeMode);
+  // Enrolled V2 devices require a fresh signed HOME-001 authorization.
+  // Unprovisioned V1 builds preserve the original behavior.
+  static uint32_t natDiagAt = 0;
+  if (homeMode && millis() - natDiagAt >= 5000) {
+    natDiagAt = millis();
+    Serial.printf(
+      "MR NAT GATE: share=%d ap=%d wan=%d ip=%d approved=%d pending=%d relink=%d vpn=%d tunnel=%d route=%d auth=%d active=%d\n",
+      natShareEnabled, apBroadcastEnabled,
+      WiFi.status()==WL_CONNECTED, WiFi.STA.hasIP(),
+      natStationPolicyOk, admissionOpen, recoveringOwner,
+      vpnEnabled, vpnTunnel.is_initialized(), wgLinkUp,
+      MiniRackV2::internetPermit(), natActive);
+  }
+  natController.poll(mayForward && MiniRackV2::internetPermit(),
+                     apBroadcastEnabled,AP_IP,NAT_RETRY_MS,homeMode);
   if (wasActive!=natActive) liveInfoDirty=true;
 }
 
@@ -2625,37 +2707,63 @@ static void mrRegisterOwnerEndpoint(){
 // Requests are signed end-to-end between ESP and Pi over the WireGuard tunnel.
 // The downloaded mobileconfig is held only temporarily in ESP RAM, never on flash.
 static bool mrFetchOwnerProfile(String &profile){
+  // Temporary diagnostics: do not log credentials, MACs, nonces or profiles.
   if(!vpnEnabled || !vpnTunnel.is_initialized() || primaryMac.isEmpty() ||
-     ownerBridgeId.isEmpty())return false;
+     ownerBridgeId.isEmpty()){
+    Serial.printf("MRPROFILE: precheck failed vpn=%d wg_init=%d owner=%d bridge_id=%d\n",
+                  vpnEnabled?1:0, vpnTunnel.is_initialized()?1:0,
+                  primaryMac.isEmpty()?0:1, ownerBridgeId.isEmpty()?0:1);
+    return false;
+  }
   char buf[33];
   for(int i=0;i<4;i++)snprintf(buf+i*8,9,"%08lx",(unsigned long)esp_random());
   const String nonce(buf);
   String reqSig;
-  if(!mrBridgeHmacHex(String("MR-PROFILE-V1|REQ|")+ownerBridgeId+"|"+nonce,reqSig))return false;
+  if(!mrBridgeHmacHex(String("MR-PROFILE-V1|REQ|")+ownerBridgeId+"|"+nonce,reqSig)){
+    Serial.println("MRPROFILE: request signature creation failed");
+    return false;
+  }
   HTTPClient upstream;
   const char *headers[]={"X-MR-Signature"};
   upstream.collectHeaders(headers,1);
   upstream.setTimeout(7000);
-  if(!upstream.begin("http://10.10.0.1:8765/v1/owner.mobileconfig"))return false;
+  if(!upstream.begin("http://10.10.0.1:8765/v1/owner.mobileconfig")){
+    Serial.println("MRPROFILE: HTTP client begin failed");
+    return false;
+  }
   upstream.addHeader("X-MR-Owner",ownerBridgeId);
   upstream.addHeader("X-MR-Nonce",nonce);
   upstream.addHeader("X-MR-Auth",reqSig);
   const int code=upstream.GET();
   const int len=upstream.getSize();
-  if(code!=200 || len<100 || len>16384){upstream.end();return false;}
+  Serial.printf("MRPROFILE: upstream_http=%d reported_length=%d\n",code,len);
+  if(code!=200 || len<100 || len>16384){
+    Serial.println("MRPROFILE: upstream rejected or invalid length");
+    upstream.end();return false;
+  }
   const String proof=upstream.header("X-MR-Signature");
   profile=upstream.getString();
   upstream.end();
-  if((int)profile.length()!=len || profile.indexOf("<plist")<0){profile="";return false;}
+  if((int)profile.length()!=len || profile.indexOf("<plist")<0){
+    Serial.println("MRPROFILE: profile body malformed or length mismatch");
+    profile="";return false;
+  }
   uint8_t digest[32];
   const mbedtls_md_info_t *info=mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-  if(!info || mbedtls_md(info,(const uint8_t *)profile.c_str(),profile.length(),digest)!=0){profile="";return false;}
+  if(!info || mbedtls_md(info,(const uint8_t *)profile.c_str(),profile.length(),digest)!=0){
+    Serial.println("MRPROFILE: digest calculation failed");
+    profile="";return false;
+  }
   char sha[65];static const char hexdigits[]="0123456789abcdef";
   for(size_t i=0;i<32;i++){sha[i*2]=hexdigits[digest[i]>>4];sha[i*2+1]=hexdigits[digest[i]&15];}
   sha[64]=0;
   String expected;
   if(!mrBridgeHmacHex(String("MR-PROFILE-V1|RESP|")+nonce+"|"+sha,expected) ||
-     !mrBridgeSignatureEqual(proof,expected)){profile="";return false;}
+     !mrBridgeSignatureEqual(proof,expected)){
+    Serial.println("MRPROFILE: server response signature mismatch");
+    profile="";return false;
+  }
+  Serial.println("MRPROFILE: profile fetched and verified");
   return true;
 }
 // RFC 8908 captive-portal API referenced from DHCP Option 114.
@@ -2733,7 +2841,7 @@ static void webInit(){
        view!=View::OWNER_VPN_QR || !windowOpen(portalOpenUntil) ||
        !mr7ValidToken(portal.arg("t")) ||
        !isOwnerBrowser(portal.client().remoteIP()) ||
-       apPassword=="MINIRACK_AP_FACTORY_PASSWORD" ||
+       apPassword=="MiniRack2026!" ||
        !vpnEnabled || !vpnTunnel.is_initialized()){
       mrSecurityObserve(MiniRackSecurity::Event::RejectedProtectedProfile,
                         mrSecurityIPTag(portal.client().remoteIP()));
@@ -2771,7 +2879,7 @@ static void webInit(){
     if(securityMonitor.sensitiveOperationsLocked() || !ownedSelection ||
        !portalForOwnerRelink || portalForVpn || ownerQrBlock!=0 ||
        view!=View::OWNER_VPN_QR || !windowOpen(portalOpenUntil) ||
-       !mr7ValidToken(portal.arg("t")) || apPassword=="MINIRACK_AP_FACTORY_PASSWORD"){
+       !mr7ValidToken(portal.arg("t")) || apPassword=="MiniRack2026!"){
       mrSecurityObserve(MiniRackSecurity::Event::RejectedProtectedProfile,
                         mrSecurityIPTag(portal.client().remoteIP()));
       portal.send(403,"text/plain","Fresh physical re-link QR required");return;
@@ -2853,9 +2961,19 @@ static void webInit(){
      portal.send(400,"text/plain","Invalid password length");return;
    }
    savedSSID=ssid;savedPassword=pass;
-   prefsNet.putString("ssid",savedSSID);prefsNet.putString("pass",savedPassword);
+    size_t a = prefsNet.putString("ssid",savedSSID);
+    size_t b = prefsNet.putString("pass",savedPassword);
+    if (a != savedSSID.length() ||
+        b != savedPassword.length() ||
+        prefsNet.getString("ssid","") != savedSSID ||
+        prefsNet.getString("pass","") != savedPassword) {
+      Serial.println("MINIRACK WIFI SAVE FAILED");
+      portal.send(500,"text/plain","Wi-Fi save failed");
+      return;
+    }
+    Serial.println("MINIRACK WIFI SAVED VERIFIED");
    wifiChangePending=true;portalChangeMs=millis();
-   portalOpenUntil=0; // one-time PIN; new setup requires a fresh PIN on-device.
+   portalOpenUntil=0; // single-use physical setup; reopen from touchscreen.
    portal.send(200,"text/html; charset=utf-8",htmlLayout("<article><p>تم حفظ الاتصال بالشبكة المختارة. تابع الحالة من شاشة Mini Rack.</p></article>"));
    uiDirty=true;
  });
@@ -2911,7 +3029,9 @@ static void webService() {
     lastStaRetry=millis();
     if(staReconnectAttempts<MiniRackReconnect::kMaxAttempts) ++staReconnectAttempts;
     Serial.printf("MINIRACK STA RETRY %u; AP PRESERVED\n",(unsigned)staReconnectAttempts);
-    WiFi.reconnect();
+    Serial.printf("MR WIFI RETRY ssid=%s pass_len=%u\n",
+        savedSSID.c_str(), (unsigned)savedPassword.length());
+    WiFi.begin(savedSSID.c_str(),savedPassword.c_str());
   }
 }
 
@@ -2919,6 +3039,7 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200,SERIAL_8N1,44,43);  // preserves verified Pi UART pins
   prefsNet.begin("mininet",false);
+  MiniRackTransport::load(prefsNet);
   prefsPeers.begin("minipeers",false);
   clearLegacyRejections();
   loadPeerState();
@@ -2926,7 +3047,7 @@ void setup() {
   arabicLanguage=prefsNet.getBool("ar",true);
   savedSSID=prefsNet.getString("ssid","");
   savedPassword=prefsNet.getString("pass","");
-  apPassword=prefsNet.getString("apkey","MINIRACK_AP_FACTORY_PASSWORD");
+  apPassword=prefsNet.getString("apkey","MiniRack2026!");
   apBroadcastEnabled=prefsNet.getBool("apEnabled",true);
   vpnEnabled=prefsNet.getBool("vpnEnabled",true); // Same default as original auto-start
   natShareEnabled=prefsNet.getBool("natshare",true);
@@ -2937,6 +3058,10 @@ void setup() {
           "MINIRACK EGRESS: EXPERIMENTAL WG ROUTE; PI EXIT NOT VERIFIED":
           "MINIRACK EGRESS: HOME-ONLY GUARD ON; DIRECT NAT DISABLED"):
       "MINIRACK EGRESS: AP NAPT ENABLED; VPN ROUTING REQUIRES TEST");
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    Serial.printf("MINIRACK WIFI DISCONNECT REASON=%u\n",
+      (unsigned)info.wifi_sta_disconnected.reason);
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.persistent(false);
   WiFi.mode(apBroadcastEnabled?WIFI_AP_STA:WIFI_STA);
   WiFi.setSleep(false); // Reduce AP+STA packet delay; AP stays independent of pairing.
@@ -2947,6 +3072,8 @@ void setup() {
   if(apBroadcastEnabled && !started){apStartFailed=true;apBroadcastEnabled=false;}
   Serial.printf("MiniRack AP: %s / pairing independent\n",
                 started?"STARTED":(apBroadcastEnabled?"FAILED":"OFF"));
+  Serial.printf("MINIRACK BOOT SAVED SSID: %s\n",
+    savedSSID.isEmpty() ? "NONE" : savedSSID.c_str());
   if(savedSSID.length()) startUplink();
 #if defined(CONFIG_LWIP_DHCPS_REPORT_CLIENT_HOSTNAME) && CONFIG_LWIP_DHCPS_REPORT_CLIENT_HOSTNAME
   esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, &mrDhcpNameEvent, nullptr);

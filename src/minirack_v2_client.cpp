@@ -34,6 +34,10 @@ static uint32_t lastAuthMs=0;
 static bool attempted=false;
 static String lastBssid;
 static uint32_t retryIntervalMs=60000;
+static bool lastVerified=false;
+static bool tunnelReady=false;
+static uint32_t lastVerifiedAtMs=0;
+static constexpr uint32_t kVerifiedMaxAgeMs=90000; // 90s, refresh every 60s.
 static String hexBytes(const uint8_t *data, size_t len) {
   static const char kHex[]="0123456789abcdef";
   String out;
@@ -118,7 +122,7 @@ static bool attemptAuth(){
   String reply= code>0?http.getString():String();
   http.end();
   // Pi relay is a local service reached only over the established WG tunnel.
-  // This is *not* a data-plane authorization or a proven network kill switch.
+  // NAPT is admitted on a fresh signed proof; this is not per-station routing.
   if(code==200 && jsonText(reply,"decision")=="allow"){
     const String session=jsonText(reply,"session_id");
     const String proof=jsonText(reply,"device_response_proof");
@@ -128,7 +132,7 @@ static bool attemptAuth(){
           "\",\"session_id\":\""+session+"\"}";
       String expected;
       if(hmacHex(key,proofBody,expected)&&equalHex64(proof,expected)){
-        Serial.println("V2 AUTH: ALLOW (verified signed core proof; telemetry only)");
+        Serial.println("V2 AUTH: ALLOW (signed entitlement verified)");
         return true;
       }
     }
@@ -141,17 +145,36 @@ static bool attemptAuth(){
 } // namespace
 namespace MiniRackV2 {
 void tick(bool wgReady){
-  if(!wgReady){attempted=false;lastBssid=String();return;}
+  tunnelReady=wgReady;
+  if(!wgReady){
+    attempted=false;
+    lastBssid=String();
+    lastVerified=false;
+    return;
+  }
   const String bssid=WiFi.BSSIDstr();
-  if(bssid!=lastBssid){lastBssid=bssid;attempted=false;}
+  if(bssid!=lastBssid){
+    lastBssid=bssid;
+    attempted=false;
+    lastVerified=false; // roaming: previous grant cannot carry to a new uplink
+  }
   const uint32_t now=millis();
   if(attempted && (uint32_t)(now-lastAuthMs)<retryIntervalMs)return;
   // Only one bounded HTTP attempt per minute, avoids scanning, blocking UI loops.
   attempted=true;
   lastAuthMs=now;
-  retryIntervalMs=attemptAuth()?600000:60000;
+  lastVerified=attemptAuth();
+  if(lastVerified) lastVerifiedAtMs=millis();
+  retryIntervalMs=60000; // Check revoked entitlement at most once per minute.
+}
+bool internetPermit(){
+  return tunnelReady && lastVerified &&
+         (uint32_t)(millis()-lastVerifiedAtMs) <= kVerifiedMaxAgeMs;
 }
 }
 #else
-namespace MiniRackV2 {void tick(bool) {}}
+namespace MiniRackV2 {
+void tick(bool) {}
+bool internetPermit() { return true; } // V1 unchanged without V2 enrollment
+}
 #endif

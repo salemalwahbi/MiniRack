@@ -1,0 +1,6 @@
+repository_filename,original_zip_path,extents_assuming_mm_X_Y_Z,faces,watertight,consistent_winding,sha256
+case_part_11.stl,stl/case_3D_______11____minirockk__________.stl,123.5 / 102.4 / 16.7,5589,False,True,32cd4be2d748d33707b3c7964476e66160fcf6fce5408129a3eb3a0fa9355db2
+case_part_22.stl,stl/case_3D_______22____minirockk__________.stl,123.5 / 102.4 / 23.4,15613,False,True,fd1df19ddd0cb3f6d51dbf22b1144ed6c1160bf04ab4c31c1e3cc03f99fd85c7
+case_lock_333.stl,stl/case_3D_______333lock____minirockk__________.stl,4.3 / 5.1 / 8.9,104,True,True,918c86da3651602846888818ac36ac86af2aa52bb788461eea6ee26280dd4be7
+case_part_444.stl,stl/case_3D_______444____minirockk__________.stl,40.1 / 102.4 / 9.0,8048,False,True,95168af873fd3c9bf4a681c4b9ce8aa2b24ea3c1e35055cc856d2c7ca0ecba4d
+case_part_66.stl,stl/case_3D_______66____minirockk__________.stl,54.4 / 90.3 / 6.1,8556,True,False,abaf7ccab408e0a5f5a98613941d9017497a61878619011d9013f78fc9347da7
