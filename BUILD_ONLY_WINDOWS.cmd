@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 title Mini Rack V1 - Build ONLY
-set "PVT=C:\Users\fawaz\MiniRackPrivate"
+set "PVT=%~dp0private"
 echo ==================================================
 echo Mini Rack V1 - Windows preflight + PlatformIO Build
 
