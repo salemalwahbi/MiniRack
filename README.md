@@ -67,7 +67,7 @@
 
 ## تجربة المعرض التفاعلية
 
-**[🚀 تشغيل ديمو MiniRack في المتصفح](https://salemalwahbi.github.io/MiniRack/docs/MiniRack_Expo.html)**
+**[🚀 تشغيل ديمو MiniRack في المتصفح](https://salemalwahbi.github.io/MiniRack/MiniRack_Expo.html)**
 
 [عرض ملف الديمو HTML داخل المستودع](docs/MiniRack_Expo.html)
 
